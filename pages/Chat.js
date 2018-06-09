@@ -4,7 +4,7 @@
  * @flow
  */
 
-import {createStackNavigator, NavigationActions} from 'react-navigation'
+import {createStackNavigator} from 'react-navigation'
 import React, { Component } from 'react';
 import {
   Platform,
@@ -12,53 +12,60 @@ import {
   Text,
   View,
   FlatList,
-  RefreshControl,
   Dimensions,
   Image,
   TouchableHighlight,
+  AsyncStorage
+
 } from 'react-native';
 import { GiftedChat } from 'react-native-gifted-chat'
 import SocketIOClient from 'socket.io-client'
 
 type Props = {};
+let mysocket;
 
+let msgs = [];
 class ChatPage extends Component<Props> {
   state={
     messages: [],
   };
 
   componentWillMount() {
-    Chat.mysocket.emit('load_conversation', JSON.stringify({
-      '_id': 1,
-      'user_id': 1,
-      'client_id': 0
-    }));
+    AsyncStorage.getItem("Messages:" + this.props.navigation.state.params._id)
+      .then(req => JSON.parse(req))
+      .then(json => {
+        if (json) {
+          msgs = json;
+          this.setState({messages: msgs});
+        }
+      })
+  }
 
-    this.setState({
-      messages: [],
-    })
+  componentDidMount(){
+    mysocket.on('update_conversation', messages => {
+      if (msgs && messages.length !== msgs.length ){
+        msgs = messages;
+        AsyncStorage.setItem("Messages:" + this.props.navigation.state.params._id, JSON.stringify(msgs));
+        this.setState({
+          messages: msgs
+        })
+      }
+    });
+
+    mysocket.emit('update_conversation', JSON.stringify({
+      'user_id': 1,
+      'client_id': this.props.navigation.state.params._id
+    }));
   }
 
   onSend(messages = []) {
     this.setState(previousState => ({
       messages: GiftedChat.append(previousState.messages, messages),
     }));
-    Chat.mysocket.emit('send', JSON.stringify({
+    mysocket.emit('send', JSON.stringify({
       'messages': messages,
       'receiver': 0
     }));
-  }
-
-  constructor(props){
-    super(props);
-
-    console.log("testing");
-    Chat.mysocket.on('update_conversation', messages => {
-      this.setState(previousState => ({
-        messages: GiftedChat.append(previousState.messages, messages),
-      }));
-      console.debug(messages);
-    });
   }
 
   render(){
@@ -74,50 +81,64 @@ class ChatPage extends Component<Props> {
   }
 }
 
-const conversations =[];
+let conversations =[];
 class Chat extends Component<Props> {
-  static mysocket = ScketIOClient('http://localhost:3000');
-
-  constructor(props){
+  constructor(props) {
     super(props);
-    Chat.mysocket.emit('pull_notifications', JSON.stringify({
-      user_id: 1
-    }));
-    Chat.mysocket.on('pull_notifications', messages=>{
-      for(let i = 0; i<messages.length; i++){
-        let id = messages[i].Sender._id;
-        let name = messages[i].Sender.name;
-        let text = messages[i].MessageText;
-        conversations[id] = {
-          id: id,
-          name: name,
-          text: text
+    this.state = {
+      dataArray: conversations,
+      isLoading: false,
+    }
+  }
+
+  componentWillMount(){
+    AsyncStorage.getItem('Notifications')
+      .then(req => JSON.parse(req))
+      .then(json => {
+        if (json) {
+          conversations = json;
+          this.setState({dataArray: conversations});
         }
-      }
+      })
+  }
+
+  componentDidMount(){
+    // Establish connection
+    mysocket = SocketIOClient('http://localhost:3000');
+
+    // Set up listener
+    mysocket.on('new_message', message => {
+      let id = message.Sender._id;
+      conversations[id] = {
+        id: id,
+        name: message.Sender.name,
+        text: message.Sender.MessageText,
+      };
+      AsyncStorage.setItem('Notifications', JSON.stringify(conversations));
       this.setState({
         dataArray: conversations
       });
     });
 
-    this.state={
-      isLoading: false,
-      dataArray: conversations
-    };
-  }
+    // Set up listener
+    mysocket.on('pull_notifications', messages=>{
+      for(let i = 0; i<messages.length; i++){
+        let id = messages[i].Sender._id;
+        conversations[id] = {
+          id: id,
+          name: messages[i].Sender.name,
+          text: messages[i].MessageText,
+        };
+      }
 
-  loadData() {
-    this.setState({
-      isLoading: true
-    });
-    setTimeout(()=>{
-      Chat.mysocket.emit('pull_notifications', JSON.stringify({
-        user_id: 1
-      }));
+      AsyncStorage.setItem('Notifications', JSON.stringify(conversations));
       this.setState({
-        dataArray: conversations,
-        isLoading:false
+        dataArray: conversations
       });
-    }, 2000);
+    });
+
+    // Request update
+    mysocket.emit('pull_notifications', JSON.stringify({user_id:1}));
   }
 
   _renderItem(data) {
@@ -125,7 +146,7 @@ class Chat extends Component<Props> {
     return (
     <TouchableHighlight
       onPress={()=>{
-        navigation.navigate('ChatPage', {client_name: data.item.name, showTabBar:false});
+        navigation.navigate('ChatPage', {_id: data.item.id, client_name: data.item.name, showTabBar:false});
       }}
     >
     <View style={styles.item}>
@@ -152,19 +173,9 @@ class Chat extends Component<Props> {
     return (
       <View style={styles.container}>
         <FlatList
+          extraData={this.state}
           data={this.state.dataArray}
           renderItem={(data)=>this._renderItem(data)}
-          refreshControl={
-            <RefreshControl
-              title={"Loading"}
-              tintColor={'red'}
-              titleColor={'red'}
-              refreshing={this.state.isLoading}
-              onRefresh={()=>{
-                this.loadData()
-              }}
-            />
-          }
         />
       </View>
     );

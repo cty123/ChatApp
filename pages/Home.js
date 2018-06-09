@@ -10,24 +10,20 @@ import {
   StyleSheet,
   Text,
   View,
-  Button
+  Button,
+  TextInput
 } from 'react-native';
+import Login from './Login'
 
 type Props = {};
 export default class Home extends Component<Props> {
   render() {
     const {navigation} = this.props;
-    return (
-      <View style={styles.container}>
-        <Text>Home Page</Text>
-        <Button
-          title={"Go to main page"}
-          onPress={()=>{
-            navigation.navigate('AppTab')
-          }}
-        />
-      </View>
-    );
+    return <Login
+      onLoginPress={() => {
+        navigation.navigate('AppTab');
+      }}
+    />;
   }
 }
 

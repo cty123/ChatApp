@@ -57,7 +57,7 @@ const AppTabNavigation = createBottomTabNavigator({
   Me: {
     screen: Me,
     navigationOptions: {
-      title: "Explore",
+      title: "Me",
       tabBarIcon: ({focused}) => (
         <Ionicons
           name={focused ? 'ios-person' : 'ios-person-outline'}
