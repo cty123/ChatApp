@@ -24,7 +24,10 @@ import SocketIOClient from 'socket.io-client'
 type Props = {};
 let mysocket;
 
-let msgs = [];
+function updateState(data){
+  this.setState({data})
+}
+
 class ChatPage extends Component<Props> {
   state={
     messages: [],
@@ -34,21 +37,19 @@ class ChatPage extends Component<Props> {
     AsyncStorage.getItem("Messages:" + this.props.navigation.state.params._id)
       .then(req => JSON.parse(req))
       .then(json => {
-        if (json) {
-          msgs = json;
-          this.setState({messages: msgs});
-        }
-      })
+        this.setState({
+          messages: json
+        });
+      });
   }
 
   componentDidMount(){
     mysocket.on('update_conversation', messages => {
-      if (msgs && messages.length !== msgs.length ){
-        msgs = messages;
-        AsyncStorage.setItem("Messages:" + this.props.navigation.state.params._id, JSON.stringify(msgs));
+      if (messages.length !== this.state.messages ) {
         this.setState({
-          messages: msgs
-        })
+          messages: messages
+        });
+        AsyncStorage.setItem("Messages:" + this.props.navigation.state.params._id, JSON.stringify(messages));
       }
     });
 
@@ -62,9 +63,24 @@ class ChatPage extends Component<Props> {
     this.setState(previousState => ({
       messages: GiftedChat.append(previousState.messages, messages),
     }));
+    for(let i = 0; i<messages.length; i++) {
+      this.state.messages.push({
+        _id: this.state.messages.length,
+        text: messages[i].text,
+        createdAt: messages[i].createdAt,
+        user: {_id: 1}
+      });
+      conversations[this.props.navigation.state.params._id].text = messages[i].text;
+    }
+    updateState(conversations);
+
+    AsyncStorage.setItem("Messages:" + this.props.navigation.state.params._id, JSON.stringify(this.state.messages));
+
+    AsyncStorage.setItem("Notifications", JSON.stringify(conversations));
+    this.setState({dataArray: conversations});
     mysocket.emit('send', JSON.stringify({
       'messages': messages,
-      'receiver': 0
+      'receiver': this.props.navigation.state.params._id
     }));
   }
 
@@ -89,7 +105,10 @@ class Chat extends Component<Props> {
       dataArray: conversations,
       isLoading: false,
     }
+    updateState = updateState.bind(this);
   }
+
+  updateData = (data) => {this.setState({ dataArray: data })};
 
   componentWillMount(){
     AsyncStorage.getItem('Notifications')
@@ -104,7 +123,7 @@ class Chat extends Component<Props> {
 
   componentDidMount(){
     // Establish connection
-    mysocket = SocketIOClient('http://localhost:3000');
+    mysocket = SocketIOClient('http://localhost:3000', {query: {user_id:1}});
 
     // Set up listener
     mysocket.on('new_message', message => {
@@ -122,14 +141,7 @@ class Chat extends Component<Props> {
 
     // Set up listener
     mysocket.on('pull_notifications', messages=>{
-      for(let i = 0; i<messages.length; i++){
-        let id = messages[i].Sender._id;
-        conversations[id] = {
-          id: id,
-          name: messages[i].Sender.name,
-          text: messages[i].MessageText,
-        };
-      }
+      conversations = messages;
 
       AsyncStorage.setItem('Notifications', JSON.stringify(conversations));
       this.setState({
@@ -176,6 +188,7 @@ class Chat extends Component<Props> {
           extraData={this.state}
           data={this.state.dataArray}
           renderItem={(data)=>this._renderItem(data)}
+          keyExtractor={(item, index) => index}
         />
       </View>
     );
